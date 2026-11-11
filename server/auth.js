@@ -1,12 +1,14 @@
 /**
- * Google OAuth 2.0 (authorization-code flow) + DB-backed sessions.
+ * Adobe CreativeTrust AI — authentication.
  *
- * • Works only when GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are present
- *   (i.e. on the Vercel deployment). Without them the app runs in open demo
- *   mode — /api/auth/me reports configured:false.
- * • Every successful sign-in upserts the user row and inserts an audit row
- *   into signins (Neon Postgres). Sessions live in the sessions table and are
- *   referenced by an HttpOnly cookie.
+ * Two providers, one session system:
+ *  • Google OAuth 2.0 (authorization-code flow) — enabled only when
+ *    GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are set (the live Vercel site).
+ *  • Email + password — scrypt-hashed (node:crypto), stored in Postgres.
+ *
+ * Every successful sign-in (either provider) upserts the user row and writes
+ * an audit row into signins (Neon Postgres). Sessions live in the sessions
+ * table and are referenced by an HttpOnly cookie (30-day expiry).
  */
 import crypto from 'node:crypto'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
@@ -16,8 +18,9 @@ const STATE_COOKIE = 'ctai_oauth_state'
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30 // 30 days
 
 const configured = () => !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-/** Idempotently create the auth tables (no re-seed / db:init rerun needed). */
+/** Idempotently create/upgrade the auth tables (no db:init rerun needed). */
 let schemaReady = null
 export function ensureAuthSchema(sql) {
   if (!schemaReady) {
@@ -42,10 +45,20 @@ export function ensureAuthSchema(sql) {
         user_id TEXT NOT NULL,
         email TEXT NOT NULL,
         user_agent TEXT,
+        method TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )`
+      // upgrades for databases created before password auth existed
+      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT`
+      await sql`ALTER TABLE users ALTER COLUMN google_sub DROP NOT NULL`
+      await sql`ALTER TABLE signins ADD COLUMN IF NOT EXISTS method TEXT`
       await sql`CREATE INDEX IF NOT EXISTS signins_user_idx ON signins (user_id, created_at DESC)`
       await sql`CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions (expires_at)`
+      try {
+        await sql`CREATE UNIQUE INDEX IF NOT EXISTS users_email_key ON users (lower(email))`
+      } catch {
+        /* duplicate emails from earlier Google sign-ins — login falls back to first match */
+      }
     })().catch((err) => {
       schemaReady = null
       throw err
@@ -53,6 +66,24 @@ export function ensureAuthSchema(sql) {
   }
   return schemaReady
 }
+
+// ─── Password hashing (scrypt, salted, constant-time compare) ────────────────
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex')
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex')
+  return `${salt}:${hash}`
+}
+
+function verifyPassword(password, stored) {
+  const [salt, hash] = String(stored).split(':')
+  if (!salt || !hash) return false
+  const candidate = crypto.scryptSync(password, salt, 64)
+  const expected = Buffer.from(hash, 'hex')
+  return candidate.length === expected.length && crypto.timingSafeEqual(candidate, expected)
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function originOf(c) {
   if (process.env.PUBLIC_ORIGIN) return process.env.PUBLIC_ORIGIN
@@ -77,6 +108,20 @@ async function sessionUser(sql, c) {
   return rows[0] || null
 }
 
+async function issueSession(sql, c, user) {
+  const token = crypto.randomBytes(32).toString('hex')
+  await sql`INSERT INTO sessions (token, user_id, expires_at)
+    VALUES (${token}, ${user.id}, now() + interval '30 days')`
+  setCookie(c, SESSION_COOKIE, token, { httpOnly: true, secure: cookieSecure(c), sameSite: 'Lax', path: '/', maxAge: SESSION_MAX_AGE })
+}
+
+async function recordSignIn(sql, c, user, method) {
+  await sql`INSERT INTO signins (user_id, email, user_agent, method)
+    VALUES (${user.id}, ${user.email}, ${c.req.header('user-agent') || 'unknown'}, ${method})`
+}
+
+// ─── Routes ──────────────────────────────────────────────────────────────────
+
 export function registerAuthRoutes(app, sql) {
   // who am I? (also reports whether OAuth is configured on this deployment)
   app.get('/api/auth/me', async (c) => {
@@ -93,6 +138,59 @@ export function registerAuthRoutes(app, sql) {
       },
     })
   })
+
+  // ── email + password ───────────────────────────────────────────────────────
+
+  app.post('/api/auth/signup', async (c) => {
+    await ensureAuthSchema(sql)
+    const b = await c.req.json().catch(() => ({}))
+    const name = String(b.name || '').trim().slice(0, 80)
+    const email = String(b.email || '').trim().toLowerCase().slice(0, 120)
+    const password = String(b.password || '')
+
+    if (!name) return c.json({ error: 'Please enter your full name.' }, 400)
+    if (!EMAIL_RE.test(email)) return c.json({ error: 'Please enter a valid email address.' }, 400)
+    if (password.length < 8) return c.json({ error: 'Password must be at least 8 characters.' }, 400)
+
+    const existing = await sql`SELECT id FROM users WHERE lower(email) = ${email} LIMIT 1`
+    if (existing.length) {
+      return c.json({ error: 'An account with this email already exists — sign in instead.' }, 409)
+    }
+
+    const id = 'E' + crypto.randomBytes(9).toString('hex')
+    const rows = await sql`
+      INSERT INTO users (id, google_sub, email, name, password_hash, last_sign_in_at)
+      VALUES (${id}, ${'pwd:' + id}, ${email}, ${name}, ${hashPassword(password)}, now())
+      RETURNING id, email, name, picture`
+    const user = rows[0]
+
+    await recordSignIn(sql, c, user, 'signup')
+    await issueSession(sql, c, user)
+    return c.json({ user: { name: user.name, email: user.email, picture: user.picture } }, 201)
+  })
+
+  app.post('/api/auth/login', async (c) => {
+    await ensureAuthSchema(sql)
+    const b = await c.req.json().catch(() => ({}))
+    const email = String(b.email || '').trim().toLowerCase()
+    const password = String(b.password || '')
+
+    const rows = await sql`
+      SELECT id, email, name, picture, password_hash FROM users
+      WHERE lower(email) = ${email}
+      ORDER BY created_at ASC LIMIT 1`
+    const user = rows[0]
+    if (!user || !user.password_hash || !verifyPassword(password, user.password_hash)) {
+      return c.json({ error: 'Incorrect email or password.' }, 401)
+    }
+
+    await sql`UPDATE users SET last_sign_in_at = now() WHERE id = ${user.id}`
+    await recordSignIn(sql, c, user, 'password')
+    await issueSession(sql, c, user)
+    return c.json({ user: { name: user.name, email: user.email, picture: user.picture } })
+  })
+
+  // ── Google OAuth ──────────────────────────────────────────────────────────
 
   // step 1 — redirect to Google's consent screen
   app.get('/api/auth/google/start', (c) => {
@@ -112,7 +210,7 @@ export function registerAuthRoutes(app, sql) {
     return c.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`)
   })
 
-  // step 2 — Google redirects back; exchange the code, upsert the user,
+  // step 2 — Google redirects back; exchange the code, upsert/link the user,
   // record the sign-in, create the session, set the cookie.
   app.get('/api/auth/google/callback', async (c) => {
     const fail = (code) => c.redirect(`/?auth_error=${encodeURIComponent(code)}`)
@@ -144,28 +242,33 @@ export function registerAuthRoutes(app, sql) {
     if (!info.sub || !info.email) return fail('profile_incomplete')
 
     await ensureAuthSchema(sql)
-    const id = 'U' + info.sub
-    const rows = await sql`
-      INSERT INTO users (id, google_sub, email, name, picture, last_sign_in_at)
-      VALUES (${id}, ${info.sub}, ${info.email}, ${info.name || info.email}, ${info.picture || null}, now())
-      ON CONFLICT (id) DO UPDATE
-        SET email = EXCLUDED.email, name = EXCLUDED.name, picture = EXCLUDED.picture, last_sign_in_at = now()
+    // link with an existing account that used the same email (e.g. password sign-up)
+    const linked = await sql`UPDATE users
+      SET google_sub = ${info.sub}, picture = COALESCE(${info.picture || null}, picture),
+          name = CASE WHEN google_sub IS NULL THEN name ELSE ${info.name || info.email} END,
+          last_sign_in_at = now()
+      WHERE lower(email) = ${info.email.toLowerCase()}
       RETURNING id, email`
-    const user = rows[0]
+    let user = linked[0]
+    if (!user) {
+      const inserted = await sql`
+        INSERT INTO users (id, google_sub, email, name, picture, last_sign_in_at)
+        VALUES (${'U' + info.sub}, ${info.sub}, ${info.email}, ${info.name || info.email}, ${info.picture || null}, now())
+        ON CONFLICT (id) DO UPDATE
+          SET email = EXCLUDED.email, name = EXCLUDED.name, picture = EXCLUDED.picture, last_sign_in_at = now()
+        RETURNING id, email`
+      user = inserted[0]
+    }
 
-    // audit trail — every sign-in is stored in the database
-    await sql`INSERT INTO signins (user_id, email, user_agent)
-      VALUES (${user.id}, ${user.email}, ${c.req.header('user-agent') || 'unknown'})`
+    await recordSignIn(sql, c, user, 'google')
     await sql`DELETE FROM sessions WHERE expires_at < now()`
-
-    const token = crypto.randomBytes(32).toString('hex')
-    await sql`INSERT INTO sessions (token, user_id, expires_at)
-      VALUES (${token}, ${user.id}, now() + interval '30 days')`
+    await issueSession(sql, c, user)
 
     deleteCookie(c, STATE_COOKIE, { path: '/' })
-    setCookie(c, SESSION_COOKIE, token, { httpOnly: true, secure: cookieSecure(c), sameSite: 'Lax', path: '/', maxAge: SESSION_MAX_AGE })
     return c.redirect('/')
   })
+
+  // ── session helpers ───────────────────────────────────────────────────────
 
   // sign-in history for the current user
   app.get('/api/auth/signins', async (c) => {
@@ -173,13 +276,14 @@ export function registerAuthRoutes(app, sql) {
     const user = await sessionUser(sql, c)
     if (!user) return c.json({ error: 'not signed in' }, 401)
     const rows = await sql`
-      SELECT id, email, user_agent, created_at FROM signins
+      SELECT id, email, user_agent, method, created_at FROM signins
       WHERE user_id = ${user.id}
       ORDER BY created_at DESC LIMIT 10`
     return c.json(rows.map((r) => ({
       id: r.id,
       email: r.email,
       userAgent: r.user_agent,
+      method: r.method || 'google',
       at: new Date(r.created_at).toISOString(),
     })))
   })

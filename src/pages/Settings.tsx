@@ -55,8 +55,13 @@ function SignInLog() {
                 {new Date(e.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 {e.userAgent ? <span className="text-ink3"> · {e.userAgent.slice(0, 48)}</span> : null}
               </span>
-              <span className="shrink-0 rounded-md border border-success/25 bg-success/10 px-1.5 py-0.5 text-micro font-medium text-success">
-                signed in
+              <span className="flex shrink-0 items-center gap-1.5">
+                <span className="rounded-md border border-line bg-elevated px-1.5 py-0.5 text-micro font-medium text-ink2">
+                  {e.method === 'password' ? 'Email' : e.method === 'signup' ? 'Sign-up' : 'Google'}
+                </span>
+                <span className="rounded-md border border-success/25 bg-success/10 px-1.5 py-0.5 text-micro font-medium text-success">
+                  signed in
+                </span>
               </span>
             </li>
           ))}

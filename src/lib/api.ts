@@ -40,11 +40,16 @@ export interface SignInEntry {
   id: number
   email: string
   userAgent?: string | null
+  method?: string
   at: string
 }
 
 export const apiGetAuth = () => api<{ configured: boolean; user: AuthUser | null }>('/api/auth/me')
 export const apiSignOut = () => api<{ ok: boolean }>('/api/auth/logout', { method: 'POST' })
+export const apiLogin = (email: string, password: string) =>
+  api<{ user: AuthUser }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
+export const apiSignup = (name: string, email: string, password: string) =>
+  api<{ user: AuthUser }>('/api/auth/signup', { method: 'POST', body: JSON.stringify({ name, email, password }) })
 export const apiRecentSignIns = () => api<SignInEntry[]>('/api/auth/signins')
 
 export const apiAnalyze = (file: File, analyst: string) => {

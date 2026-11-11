@@ -125,4 +125,10 @@ CREATE TABLE IF NOT EXISTS signins (
 
 CREATE INDEX IF NOT EXISTS signins_user_idx    ON signins (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions (expires_at);
+
+-- email + password accounts (google_sub nullable for them)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+ALTER TABLE users ALTER COLUMN google_sub DROP NOT NULL;
+ALTER TABLE signins ADD COLUMN IF NOT EXISTS method TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_key ON users (lower(email));
 `
