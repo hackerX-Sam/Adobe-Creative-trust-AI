@@ -1,18 +1,33 @@
 import { useState } from 'react'
-import { FileText, Download, Plus, MoreHorizontal } from 'lucide-react'
+import { FileText, Download, Plus, MoreHorizontal, Loader2 } from 'lucide-react'
 import AnalyticsChartCard from '../components/AnalyticsChartCard'
 import ConfirmationModal from '../components/ConfirmationModal'
 import { useToast } from '../components/ToastProvider'
 import { EmptyState } from '../components/EmptyState'
 import { fmtDate } from '../lib/types'
 import { useWorkspace } from '../lib/store'
+import { downloadReportPdf } from '../lib/pdf'
 import type { Report } from '../lib/store'
 
 export default function Reports() {
   const { toast } = useToast()
   const [modal, setModal] = useState<{ gen: boolean; del?: Report; scope?: boolean } | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
   const { state, addReport, removeReport } = useWorkspace()
   const reports = state.reports
+
+  const download = async (r: Report) => {
+    if (!state || busyId) return
+    setBusyId(r.id)
+    try {
+      await downloadReportPdf(r, state)
+      toast('success', 'Report downloaded', `${r.name} · ${r.id}.pdf`)
+    } catch (err) {
+      toast('error', 'Download failed', err instanceof Error ? err.message : 'Could not generate the PDF.')
+    } finally {
+      setBusyId(null)
+    }
+  }
 
   const generate = () => {
     const name = `Weekly Integrity Report — ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
@@ -85,10 +100,11 @@ export default function Reports() {
                       <div className="flex items-center justify-end gap-1">
                         <button
                           className="btn-ghost btn-sm h-7 px-2"
-                          disabled={r.status !== 'Ready'}
-                          onClick={() => toast('success', 'Download started', `${r.name} · PDF`)}
+                          disabled={r.status !== 'Ready' || busyId === r.id}
+                          title={r.status === 'Ready' ? 'Download PDF' : 'Available once the report is Ready'}
+                          onClick={() => void download(r)}
                         >
-                          <Download className="h-3.5 w-3.5" />
+                          {busyId === r.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
                         </button>
                         <button
                           className="btn-ghost btn-sm h-7 w-7 p-0"
