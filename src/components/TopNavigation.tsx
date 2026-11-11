@@ -90,7 +90,7 @@ export default function TopNavigation({ onOpenSidebar }: { onOpenSidebar: () => 
   const location = useLocation()
   const { toast } = useToast()
   const { state, markRead } = useWorkspace()
-  const { configured, user } = useAuth()
+  const { user } = useAuth()
   const title = ROUTES[location.pathname] ?? 'Overview'
   const unread = state.feed.filter((f) => !f.read).length
   const displayName = user?.name ?? CURRENT_USER.name
@@ -99,7 +99,7 @@ export default function TopNavigation({ onOpenSidebar }: { onOpenSidebar: () => 
 
   const signOut = async () => {
     setUserOpen(false)
-    if (configured) {
+    if (user) {
       try {
         await apiSignOut()
       } catch { /* cookie cleared anyway below */ }

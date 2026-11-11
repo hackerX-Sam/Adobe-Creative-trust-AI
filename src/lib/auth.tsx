@@ -28,6 +28,7 @@ import type { AuthUser } from './api'
 
 interface AuthInfo {
   checked: boolean
+  backend: boolean
   configured: boolean
   user: AuthUser | null
 }
@@ -47,14 +48,15 @@ export function useAuth() {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [info, setInfo] = useState<AuthInfo>({ checked: false, configured: false, user: null })
+  const [info, setInfo] = useState<AuthInfo>({ checked: false, backend: false, configured: false, user: null })
 
   const refresh = useCallback(async () => {
     try {
       const a = await apiGetAuth()
-      setInfo({ checked: true, ...a })
+      setInfo({ checked: true, backend: true, ...a })
     } catch {
-      setInfo((s) => ({ ...s, checked: true }))
+      // no reachable backend (e.g. local dev without .env) → open demo mode
+      setInfo({ checked: true, backend: false, configured: false, user: null })
     }
   }, [])
 
@@ -73,8 +75,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     )
   }
 
-  if (info.configured && !info.user) {
-    return <AuthPage onSuccess={refresh} />
+  // any deployment with a live backend (i.e. the Vercel site) requires sign-in.
+  // The Google button is offered only when its credentials are configured;
+  // email + password sign-up / login always works.
+  if (info.backend && !info.user) {
+    return <AuthPage googleReady={info.configured} onSuccess={refresh} />
   }
 
   return (
@@ -118,7 +123,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   profile_incomplete: 'Your Google account did not expose the required email/profile scopes.',
 }
 
-function AuthPage({ onSuccess }: { onSuccess: () => Promise<void> }) {
+function AuthPage({ googleReady, onSuccess }: { googleReady: boolean; onSuccess: () => Promise<void> }) {
   const [mode, setMode] = useState<Mode>('signin')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<'google' | 'form' | null>(null)
@@ -168,6 +173,10 @@ function AuthPage({ onSuccess }: { onSuccess: () => Promise<void> }) {
 
   const googleStart = () => {
     if (busy) return
+    if (!googleReady) {
+      setError('Google sign-in is not configured on this deployment yet — add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in Vercel, then redeploy. Email sign-in works right now.')
+      return
+    }
     setBusy('google')
     window.location.assign('/api/auth/google/start')
   }
