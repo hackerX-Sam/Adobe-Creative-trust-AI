@@ -101,7 +101,7 @@ async function sessionUser(sql, c) {
   const token = getCookie(c, SESSION_COOKIE)
   if (!token) return null
   const rows = await sql`
-    SELECT u.google_sub, u.email, u.name, u.picture, u.created_at, u.last_sign_in_at
+    SELECT u.id, u.google_sub, u.email, u.name, u.picture, u.created_at, u.last_sign_in_at
     FROM sessions s JOIN users u ON u.id = s.user_id
     WHERE s.token = ${token} AND s.expires_at > now()
     LIMIT 1`
