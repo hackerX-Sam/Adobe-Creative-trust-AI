@@ -96,4 +96,33 @@ CREATE INDEX IF NOT EXISTS fingerprints_sha_idx      ON fingerprints (sha256);
 -- Atomic race-free ID allocation for new verifications
 CREATE SEQUENCE IF NOT EXISTS verification_id_seq START WITH 8500;
 SELECT setval('verification_id_seq', GREATEST(8500, COALESCE((SELECT max((regexp_replace(id, '\\D', '', 'g'))::bigint) FROM verifications), 8499)));
+
+-- ─── Google OAuth (server-side sessions; sign-in audit trail) ─────────────────
+CREATE TABLE IF NOT EXISTS users (
+  id              TEXT PRIMARY KEY,          -- 'U' + Google sub
+  google_sub      TEXT UNIQUE NOT NULL,
+  email           TEXT NOT NULL,
+  name            TEXT NOT NULL,
+  picture         TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_sign_in_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token      TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS signins (
+  id         BIGSERIAL PRIMARY KEY,
+  user_id    TEXT NOT NULL,
+  email      TEXT NOT NULL,
+  user_agent TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS signins_user_idx    ON signins (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions (expires_at);
 `

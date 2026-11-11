@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Settings as SettingsIcon,
   Shield,
@@ -8,6 +8,7 @@ import {
   Trash2,
   Save,
   RotateCcw,
+  LogIn,
 } from 'lucide-react'
 import AnalyticsChartCard from '../components/AnalyticsChartCard'
 import ConfirmationModal from '../components/ConfirmationModal'
@@ -15,6 +16,55 @@ import { useToast } from '../components/ToastProvider'
 import { useWorkspace } from '../lib/store'
 import { useTheme } from '../components/ThemeProvider'
 import { CURRENT_USER } from '../lib/data'
+import { apiRecentSignIns } from '../lib/api'
+import type { SignInEntry } from '../lib/api'
+import { useAuth } from '../lib/auth'
+
+/** Recent sign-ins straight from the Neon Postgres audit table. */
+function SignInLog() {
+  const { user } = useAuth()
+  const [entries, setEntries] = useState<SignInEntry[] | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    if (!user) return
+    apiRecentSignIns()
+      .then(setEntries)
+      .catch(() => setFailed(true))
+  }, [user])
+
+  if (!user) return null
+
+  return (
+    <div className="mt-5 border-t border-line pt-4">
+      <p className="flex items-center gap-2 text-micro font-semibold uppercase tracking-[0.07em] text-ink3">
+        <LogIn className="h-3.5 w-3.5" />
+        Recent sign-ins — stored in Neon Postgres
+      </p>
+      {failed ? (
+        <p className="mt-2.5 text-tiny text-ink3">Sign-in log unavailable for this session.</p>
+      ) : entries === null ? (
+        <p className="mt-2.5 text-tiny text-ink3">Loading audit log…</p>
+      ) : entries.length === 0 ? (
+        <p className="mt-2.5 text-tiny text-ink3">No sign-ins recorded yet for this account.</p>
+      ) : (
+        <ul className="mt-2.5 space-y-1.5">
+          {entries.map((e) => (
+            <li key={e.id} className="flex items-center justify-between gap-3 text-tiny">
+              <span className="truncate text-ink2">
+                {new Date(e.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                {e.userAgent ? <span className="text-ink3"> · {e.userAgent.slice(0, 48)}</span> : null}
+              </span>
+              <span className="shrink-0 rounded-md border border-success/25 bg-success/10 px-1.5 py-0.5 text-micro font-medium text-success">
+                signed in
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
 
 function Toggle({ label, desc, checked, onChange }: { label: string; desc: string; checked: boolean; onChange: (_v: boolean) => void }) {
   return (
@@ -218,6 +268,7 @@ export default function Settings() {
                 </li>
               ))}
             </ul>
+            <SignInLog />
           </AnalyticsChartCard>
 
           <AnalyticsChartCard title="Danger Zone" subtitle="Irreversible workspace operations" minBodyHeight={0}>

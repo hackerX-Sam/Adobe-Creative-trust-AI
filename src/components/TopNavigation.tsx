@@ -16,6 +16,8 @@ import {
 import { useTheme } from './ThemeProvider'
 import { CURRENT_USER } from '../lib/data'
 import { useWorkspace, relTime, clockTime } from '../lib/store'
+import { useAuth } from '../lib/auth'
+import { apiSignOut } from '../lib/api'
 import { FEED_ICONS } from './FeedIcons'
 import { useToast } from './ToastProvider'
 
@@ -88,8 +90,24 @@ export default function TopNavigation({ onOpenSidebar }: { onOpenSidebar: () => 
   const location = useLocation()
   const { toast } = useToast()
   const { state, markRead } = useWorkspace()
+  const { configured, user } = useAuth()
   const title = ROUTES[location.pathname] ?? 'Overview'
   const unread = state.feed.filter((f) => !f.read).length
+  const displayName = user?.name ?? CURRENT_USER.name
+  const displayEmail = user?.email ?? CURRENT_USER.email
+  const initials = displayName.trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase() || 'U'
+
+  const signOut = async () => {
+    setUserOpen(false)
+    if (configured) {
+      try {
+        await apiSignOut()
+      } catch { /* cookie cleared anyway below */ }
+      window.location.assign('/')
+    } else {
+      toast('info', 'Session ended (demo)', 'Sign-in is not enabled on this deployment — sign-out is simulated.')
+    }
+  }
 
   const [notifOpen, setNotifOpen] = useState(false)
   const [userOpen, setUserOpen] = useState(false)
@@ -243,16 +261,20 @@ export default function TopNavigation({ onOpenSidebar }: { onOpenSidebar: () => 
             }}
             aria-label="Account menu"
           >
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-elevated2 text-tiny font-semibold text-ink ring-1 ring-line">
-              {CURRENT_USER.initials}
+            <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-elevated2 text-tiny font-semibold text-ink ring-1 ring-line">
+              {user?.picture ? (
+                <img src={user.picture} alt="" referrerPolicy="no-referrer" className="h-8 w-8 object-cover" />
+              ) : (
+                initials
+              )}
             </span>
             <ChevronDown className="hidden h-3.5 w-3.5 text-ink3 sm:block" />
           </button>
           {userOpen && (
             <div className="animate-popIn absolute right-0 top-full z-40 mt-2 w-56 rounded-xl border border-line bg-elevated p-1.5 shadow-pop">
               <div className="border-b border-line px-3 py-2.5">
-                <p className="text-[13px] font-semibold text-ink">{CURRENT_USER.name}</p>
-                <p className="truncate text-micro text-ink3">{CURRENT_USER.email}</p>
+                <p className="text-[13px] font-semibold text-ink">{displayName}</p>
+                <p className="truncate text-micro text-ink3">{displayEmail}</p>
               </div>
               <div className="p-1">
                 <Link
@@ -271,10 +293,7 @@ export default function TopNavigation({ onOpenSidebar }: { onOpenSidebar: () => 
                 </Link>
                 <button
                   className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-ink2 transition-colors hover:bg-elevated2 hover:text-ink"
-                  onClick={() => {
-                    setUserOpen(false)
-                    toast('info', 'Session ended (demo)', 'This is a conceptual prototype — sign-out is simulated.')
-                  }}
+                  onClick={signOut}
                 >
                   <LogOut className="h-4 w-4" /> Sign out
                 </button>

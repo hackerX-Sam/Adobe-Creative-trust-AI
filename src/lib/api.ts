@@ -26,6 +26,27 @@ export async function api<T = unknown>(path: string, init?: RequestInit): Promis
 
 export const apiGetState = () => api('/api/state')
 
+// ─── Auth (Google OAuth, server-side sessions) ───────────────────────────────
+
+export interface AuthUser {
+  name: string
+  email: string
+  picture?: string | null
+  signedInAt?: string
+  memberSince?: string
+}
+
+export interface SignInEntry {
+  id: number
+  email: string
+  userAgent?: string | null
+  at: string
+}
+
+export const apiGetAuth = () => api<{ configured: boolean; user: AuthUser | null }>('/api/auth/me')
+export const apiSignOut = () => api<{ ok: boolean }>('/api/auth/logout', { method: 'POST' })
+export const apiRecentSignIns = () => api<SignInEntry[]>('/api/auth/signins')
+
 export const apiAnalyze = (file: File, analyst: string) => {
   const form = new FormData()
   form.append('file', file)

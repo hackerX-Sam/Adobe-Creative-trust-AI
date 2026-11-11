@@ -9,6 +9,7 @@ import { Hono } from 'hono'
 import crypto from 'node:crypto'
 import { getSql } from './db.js'
 import { seedDatabase } from './seed.js'
+import { registerAuthRoutes } from './auth.js'
 
 const randInt = (min, max) => crypto.randomInt(min, max + 1)
 const pick = (arr) => arr[crypto.randomInt(arr.length)]
@@ -292,6 +293,8 @@ function humanSize(bytes) {
 export function createApp() {
   const app = new Hono()
   const sql = getSql()
+
+  registerAuthRoutes(app, sql)
 
   // full workspace snapshot
   app.get('/api/state', async (c) => c.json(await fullState(sql)))

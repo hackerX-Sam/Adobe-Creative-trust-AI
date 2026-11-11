@@ -4,6 +4,7 @@ import AppSidebar from './components/AppSidebar'
 import TopNavigation from './components/TopNavigation'
 import { ToastProvider } from './components/ToastProvider'
 import { ThemeProvider } from './components/ThemeProvider'
+import { AuthProvider } from './lib/auth'
 import { WorkspaceProvider } from './lib/store'
 import { PageSkeleton } from './components/LoadingSkeleton'
 import Overview from './pages/Overview'
@@ -112,12 +113,14 @@ export default function App() {
   return (
     <ThemeProvider>
       <ToastProvider>
-        <WorkspaceProvider>
-          <HashRouter>
-            <ScrollToTop />
-            <WorkspaceLayout>{routes}</WorkspaceLayout>
-          </HashRouter>
-        </WorkspaceProvider>
+        <AuthProvider>
+          <WorkspaceProvider>
+            <HashRouter>
+              <ScrollToTop />
+              <WorkspaceLayout>{routes}</WorkspaceLayout>
+            </HashRouter>
+          </WorkspaceProvider>
+        </AuthProvider>
       </ToastProvider>
     </ThemeProvider>
   )
