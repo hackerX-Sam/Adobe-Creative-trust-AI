@@ -235,14 +235,20 @@ const WorkspaceCtx = createContext<WorkspaceApi | null>(null)
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<WorkspaceState | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
   const lastReadRef = useRef(loadLastRead())
 
   // initial snapshot + realtime channel
   useEffect(() => {
     let disposed = false
+    setError(null)
     const close = openStream({
       snapshot: (snap) => {
-        if (!disposed) setState(hydrate(snap, lastReadRef.current))
+        if (!disposed) {
+          setError(null)
+          setState(hydrate(snap, lastReadRef.current))
+        }
       },
       patch: (patch) => {
         if (!disposed) setState((s) => (s ? applyPatch(s, patch) : s))
@@ -255,13 +261,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     // browser's alternative DNS stack), hydrate directly from the REST endpoint instead
     const fallbackTimer = setTimeout(async () => {
       if (disposed) return
+      const ctrl = new AbortController()
+      const abortTimer = setTimeout(() => ctrl.abort(), 10_000)
       try {
-        const res = await fetch('/api/state')
-        if (!res.ok) return
+        const res = await fetch('/api/state', { signal: ctrl.signal })
+        if (!res.ok) throw new Error(`API responded ${res.status} ${res.statusText} — backend is failing`)
         const snap = (await res.json()) as Snapshot
         if (!disposed) setState((s) => (s ? s : hydrate(snap, lastReadRef.current)))
-      } catch {
-        /* offline entirely — the SSE reconnection will retry */
+      } catch (err) {
+        if (!disposed) {
+          setError(err instanceof Error ? err.message : 'Cannot reach the backend API')
+        }
+      } finally {
+        clearTimeout(abortTimer)
       }
     }, 6000)
     return () => {
@@ -269,7 +281,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       clearTimeout(fallbackTimer)
       close()
     }
-  }, [])
+  }, [attempt])
 
   const actions = useMemo<WorkspaceApi>(() => ({
     state: state as WorkspaceState,
@@ -333,6 +345,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }), [state])
 
   if (!state) {
+    if (error) {
+      return (
+        <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 px-4 text-center text-ink3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-danger/10 text-danger">!</div>
+          <p className="text-sm font-medium text-danger">Workspace could not load</p>
+          <p className="max-w-md text-tiny">{error}</p>
+          <button
+            onClick={() => setAttempt((a) => a + 1)}
+            className="mt-1 rounded-lg bg-accent px-4 py-2 text-tiny font-semibold text-white transition hover:opacity-90"
+          >
+            Retry connection
+          </button>
+        </div>
+      )
+    }
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 text-ink3">
         <div className="h-7 w-7 animate-spin rounded-full border-2 border-line border-t-accent" />
