@@ -1,0 +1,174 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-line;
+  }
+
+  /* ── Theme tokens ── */
+  :root,
+  html.dark {
+    color-scheme: dark;
+    --c-base: #0B0B0D;
+    --c-sidebar: #101014;
+    --c-card: #17171C;
+    --c-elevated: #1D1D23;
+    --c-elevated2: #232329;
+    --c-line: #292930;
+    --c-line-bright: #3A3A44;
+    --c-ink: #F5F5F7;
+    --c-ink2: #A1A1AA;
+    --c-ink3: #6B6B75;
+    --stage-bg: #0E0E11;
+    --stage-grid: rgba(255, 255, 255, 0.035);
+    --skel-a: #1D1D23;
+    --skel-b: #292930;
+  }
+
+  html.light {
+    color-scheme: light;
+    --c-base: #F6F6F8;
+    --c-sidebar: #FFFFFF;
+    --c-card: #FFFFFF;
+    --c-elevated: #F3F3F6;
+    --c-elevated2: #EAEAEF;
+    --c-line: #E4E4EA;
+    --c-line-bright: #D3D3DB;
+    --c-ink: #191922;
+    --c-ink2: #59575F;
+    --c-ink3: #8B8A94;
+    --stage-bg: #FFFFFF;
+    --stage-grid: rgba(25, 25, 34, 0.05);
+    --skel-a: #F0F0F4;
+    --skel-b: #E2E2E9;
+  }
+
+  html {
+    @apply bg-base;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-base text-ink font-sans text-body;
+    overscroll-behavior: none;
+  }
+
+  ::selection {
+    background: rgba(255, 59, 48, 0.35);
+    color: #ffffff;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--c-elevated2);
+    border-radius: 8px;
+    border: 2px solid var(--c-base);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--c-line-bright);
+  }
+
+  input::placeholder {
+    @apply text-ink3;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-card border border-line rounded-xl shadow-card;
+  }
+
+  .hover-lift {
+    @apply transition-all duration-200 ease-out hover:bg-elevated hover:border-lineBright hover:shadow-elevate;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md text-body font-medium
+      transition-all duration-150 outline-none select-none
+      focus-visible:ring-2 focus-visible:ring-accent/60 whitespace-nowrap cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-sm {
+    @apply h-8 px-3 text-[13px];
+  }
+  .btn-md {
+    @apply h-9 px-4;
+  }
+
+  .btn-primary {
+    @apply btn bg-accent text-white shadow-accent hover:bg-[#FF4D45] active:bg-[#E53028] active:scale-[0.98];
+  }
+  .btn-secondary {
+    @apply btn bg-elevated text-ink border border-line hover:border-lineBright hover:bg-elevated2 active:bg-elevated;
+  }
+  .btn-ghost {
+    @apply btn text-ink2 hover:text-ink hover:bg-elevated;
+  }
+
+  .input-base {
+    @apply bg-elevated border border-line rounded-md h-9 px-3 text-body text-ink
+      outline-none transition-colors duration-150 focus:border-accent/50 focus:ring-1 focus:ring-accent/30 w-full;
+  }
+
+  .select-base {
+    @apply appearance-none bg-elevated border border-line rounded-md h-9 pl-3 pr-8 text-body text-ink
+      outline-none transition-colors duration-150 focus:border-accent/50 focus:ring-1 focus:ring-accent/30 cursor-pointer;
+  }
+
+  .divider {
+    @apply border-t border-line;
+  }
+
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--c-elevated2) transparent;
+  }
+}
+
+/* Frosted surfaces (theme-aware translucency) */
+.glass {
+  background: color-mix(in srgb, var(--c-base) 85%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.chart-tip {
+  background: color-mix(in srgb, var(--c-base) 94%, transparent);
+}
+
+/* Forensic image stage */
+.stage {
+  background-color: var(--stage-bg);
+  background-image:
+    linear-gradient(var(--stage-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--stage-grid) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* Light-theme shadow tuning */
+html.light .shadow-card {
+  box-shadow: 0 1px 2px rgba(20, 20, 28, 0.06), 0 4px 14px rgba(20, 20, 28, 0.06);
+}
+html.light .shadow-elevate {
+  box-shadow: 0 8px 24px rgba(20, 20, 28, 0.10), 0 2px 6px rgba(20, 20, 28, 0.08);
+}
+html.light .shadow-pop {
+  box-shadow: 0 12px 40px rgba(20, 20, 28, 0.16), 0 2px 8px rgba(20, 20, 28, 0.10);
+}
+html.light .shadow-accent {
+  box-shadow: 0 4px 16px rgba(255, 59, 48, 0.18);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
