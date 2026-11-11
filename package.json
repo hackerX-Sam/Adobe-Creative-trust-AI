@@ -12,7 +12,7 @@
     "dev:api": "node --env-file=.env server/dev.js",
     "typecheck": "tsc -b",
     "lint": "eslint .",
-    "lint:server": "node --check server/app.js && node --check server/seed.js && node --check server/init-db.js && node --check server/dev.js && node --check \"api/[[...route]].js\""
+    "lint:server": "node --check server/app.js && node --check server/seed.js && node --check server/init-db.js && node --check server/dev.js && node --check \"api/index.js\""
   },
   "dependencies": {
     "@hono/node-server": "^2.1.6",

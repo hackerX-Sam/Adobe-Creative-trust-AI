@@ -1,6 +1,6 @@
 /**
  * CreativeTrust AI — real-time backend application (Hono).
- * Runs on Vercel serverless (via api/[[...route]].js) and locally (via server/dev.js).
+ * Runs on Vercel serverless (via api/index.js) and locally (via server/dev.js).
  *
  * All data lives in Neon Postgres. State mutations are broadcast to every
  * connected browser through the SSE channel at GET /api/stream.
