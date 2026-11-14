@@ -498,34 +498,54 @@ export function createApp() {
         }
 
         try {
-          if (!since) send('snapshot', await fullState(sql))
+          let snapSent = false
           let lastEventId = since
+          let failCount = 0
 
           while (!closed) {
-            const { changed, live } = await processTick(sql, ctx)
-            if (changed.length || live) {
-              const [fp, cr] = await Promise.all([
-                sql`SELECT * FROM fingerprints ORDER BY created_at DESC, id DESC LIMIT 24`,
-                sql`SELECT * FROM credentials ORDER BY signed_at DESC, id DESC LIMIT 40`,
-              ])
-              send('patch', {
-                changed,
-                removed: [],
-                live,
-                weekly: await getWeekly(sql),
-                dist: await getDist(sql),
-                fingerprints: fp.map(mapFingerprint),
-                credentials: cr.map(mapCredential),
-              })
-            }
-            const newEvents = await sql`SELECT * FROM events WHERE id > ${lastEventId} ORDER BY id ASC LIMIT 30`
-            if (newEvents.length) {
-              lastEventId = Number(newEvents[newEvents.length - 1].id)
-              send('events', newEvents.map(mapEvent), lastEventId)
+            try {
+              if (!snapSent) {
+                send('snapshot', await fullState(sql))
+                snapSent = true
+              }
+              const { changed, live } = await processTick(sql, ctx)
+              if (changed.length || live) {
+                const [fp, cr] = await Promise.all([
+                  sql`SELECT * FROM fingerprints ORDER BY created_at DESC, id DESC LIMIT 24`,
+                  sql`SELECT * FROM credentials ORDER BY signed_at DESC, id DESC LIMIT 40`,
+                ])
+                send('patch', {
+                  changed,
+                  removed: [],
+                  live,
+                  weekly: await getWeekly(sql),
+                  dist: await getDist(sql),
+                  fingerprints: fp.map(mapFingerprint),
+                  credentials: cr.map(mapCredential),
+                })
+              }
+              const newEvents = await sql`SELECT * FROM events WHERE id > ${lastEventId} ORDER BY id ASC LIMIT 30`
+              if (newEvents.length) {
+                lastEventId = Number(newEvents[newEvents.length - 1].id)
+                send('events', newEvents.map(mapEvent), lastEventId)
+              }
+              if (failCount > 0) {
+                console.log('[stream] DB connection recovered after', failCount, 'retries')
+                failCount = 0
+              }
+            } catch (err) {
+              // transient DB/network failure — stay connected, back off and retry
+              failCount++
+              if (failCount === 1) {
+                const msg = err && err.message ? err.message.split('\n')[0] : String(err)
+                console.error('[stream] transient DB error — retrying with backoff:', msg)
+              }
+              await new Promise((res) => setTimeout(res, Math.min(30_000, 2_500 * failCount)))
+              continue
             }
             // heartbeat keeps proxies from closing an idle connection
             send('ping', { t: Date.now() })
-            await new Promise((res) => setTimeout(res, 2100))
+            await new Promise((res) => setTimeout(res, 2_100))
           }
         } catch (err) {
           console.error('[stream]', err)

@@ -212,8 +212,11 @@ export function registerAuthRoutes(app, sql) {
 
   // step 2 — Google redirects back; exchange the code, upsert/link the user,
   // record the sign-in, create the session, set the cookie.
+  // FRONTEND_URL: where to send the browser after auth (local dev = Vite origin;
+  // production leaves it unset and '/' is same-origin).
+  const frontend = () => process.env.FRONTEND_URL || '/'
   app.get('/api/auth/google/callback', async (c) => {
-    const fail = (code) => c.redirect(`/?auth_error=${encodeURIComponent(code)}`)
+    const fail = (code) => c.redirect(`${frontend()}?auth_error=${encodeURIComponent(code)}`)
     if (c.req.query('error')) return fail(c.req.query('error'))
 
     const state = getCookie(c, STATE_COOKIE)
@@ -265,7 +268,7 @@ export function registerAuthRoutes(app, sql) {
     await issueSession(sql, c, user)
 
     deleteCookie(c, STATE_COOKIE, { path: '/' })
-    return c.redirect('/')
+    return c.redirect(frontend())
   })
 
   // ── session helpers ───────────────────────────────────────────────────────
